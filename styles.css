@@ -52,3 +52,6 @@ dialog menu button{padding:8px 14px;border-radius:9px;background:#ffffff18}
 .empty{color:var(--mut);text-align:center;padding:40px 10px}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#fff;color:#000;padding:8px 14px;border-radius:99px;font-size:13px;opacity:0;transition:.25s;z-index:50;pointer-events:none}
 .toast.show{opacity:1}
+.meta .viral{background:#ffffff26;margin-left:6px}
+.meta .by{font-size:12px;color:#ccc;margin:0 0 2px}
+.meta .why{font-size:12px;color:var(--acc2);opacity:.9}

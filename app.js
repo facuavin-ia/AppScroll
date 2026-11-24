@@ -4,22 +4,29 @@ const CATS = {
   amigos: { label: 'Amigos', subs: { retos: '🔥 Retos', cartas: '🃏 Juegos de cartas', virales: '😂 Virales' } },
 };
 const DEFAULT_PERFIL = `Soy editor de video (DaVinci Resolve, After Effects, CapCut). Construyo mi marca personal enseñando edición, animación, flujo de trabajo y uso de IA. Mi perfil es mi portafolio para conseguir clientes y empresas. Busco herramientas que acorten el tiempo de edición de videos sencillos para mí y mis clientes, y alimentar mi "cerebro de edición" (base de conocimiento de técnicas, plantillas y automatizaciones).`;
-const S = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/';
-const DEMO = [
-  { cat: 'edicion', title: 'DEMO · Reemplazá por un video de edición con IA', url: S + 'ForBiggerBlazes.mp4', repo: 'openai/whisper', notes: 'Ejemplo: subtítulos automáticos con Whisper.' },
-  { cat: 'repos', title: 'DEMO · Repo para automatizar cortes', url: S + 'ForBiggerEscapes.mp4', repo: 'WyattBlue/auto-editor', notes: 'Corta silencios automáticamente.' },
-  { cat: 'mealprep', title: 'DEMO · Meal prep semanal', url: S + 'ForBiggerMeltdowns.mp4' },
-  { cat: 'tools', title: 'DEMO · Herramienta útil', url: S + 'ForBiggerJoyrides.mp4' },
-  { cat: 'retos', title: 'DEMO · Reto entre amigos', url: S + 'ForBiggerFun.mp4' },
-  { cat: 'cartas', title: 'DEMO · Juego de cartas', url: S + 'ForBiggerBlazes.mp4' },
-  { cat: 'virales', title: 'DEMO · Viral', url: S + 'ForBiggerEscapes.mp4' },
-];
-
 // ---------- estado ----------
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} };
 let videos = load('as_videos', null);
-if (!videos) { videos = DEMO.map((v, i) => ({ id: 'd' + i, added: Date.now() - i, idea: false, claude: false, ...v })); save('as_videos', videos); }
+if (!videos) videos = [];
+videos = videos.filter(v => !/^d\d+$/.test(v.id)); // limpia demos viejos
+let feedInfo = load('as_feedinfo', null);
+// Videos curados por Claude: se sincronizan desde feed.json en cada carga
+async function syncCurated() {
+  try {
+    const r = await fetch('feed.json?t=' + Date.now()); if (!r.ok) return;
+    const data = await r.json(), ids = new Set(data.videos.map(v => v.id));
+    videos = videos.filter(v => !v.curated || ids.has(v.id) || v.idea || v.claude);
+    const base = Date.parse(data.updated) || Date.now();
+    data.videos.forEach((c, i) => {
+      const old = videos.find(v => v.id === c.id);
+      if (old) Object.assign(old, c, { curated: true });
+      else videos.push({ ...c, curated: true, added: base - i * 1000, idea: false, claude: false });
+    });
+    feedInfo = { updated: data.updated, source: data.source, count: data.videos.length }; save('as_feedinfo', feedInfo);
+    persist();
+  } catch {}
+}
 let settings = load('as_settings', { apiKey: '', model: 'claude-sonnet-5-5', perfil: DEFAULT_PERFIL });
 let state = { feed: 'rubro', sub: 'all', view: 'feed', muted: true };
 const persist = () => save('as_videos', videos);
@@ -37,7 +44,7 @@ function parse(url) {
   if ((m = url.match(/tiktok\.com\/.*video\/(\d+)/)))
     return { kind: 'iframe', src: `https://www.tiktok.com/player/v1/${m[1]}?autoplay=1&loop=1&music_info=0&description=0` };
   if ((m = url.match(/instagram\.com\/(?:reel|reels|p)\/([\w-]+)/)))
-    return { kind: 'iframe', src: `https://www.instagram.com/reel/${m[1]}/embed` };
+    return { kind: 'iframe', src: `https://www.instagram.com/reel/${m[1]}/embed/` };
   return { kind: 'video', src: url };
 }
 const repoUrl = r => !r ? '' : r.startsWith('http') ? r : `https://github.com/${r}`;
@@ -45,7 +52,8 @@ const repoSlug = r => (r || '').replace(/^https?:\/\/github\.com\//, '').replace
 
 // ---------- feed ----------
 function visible() {
-  return videos.filter(v => feedOf(v.cat) === state.feed && (state.sub === 'all' || v.cat === state.sub)).sort((a, b) => b.added - a.added);
+  const hidden = new Set(load('as_hidden', []));
+  return videos.filter(v => !hidden.has(v.id) && feedOf(v.cat) === state.feed && (state.sub === 'all' || v.cat === state.sub)).sort((a, b) => b.added - a.added);
 }
 function renderChips() {
   const subs = CATS[state.feed].subs;
@@ -64,9 +72,9 @@ function renderFeed() {
       ? `<video src="${esc(e.src)}" loop muted playsinline preload="metadata"></video><div class="tap"></div>`
       : `<iframe data-src="${esc(e.src)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
     return `<article class="slide" data-id="${v.id}">${media}
-      <div class="meta"><span class="cat">${esc(catLabel(v.cat))}</span><h3>${esc(v.title || 'Sin título')}</h3>
+      <div class="meta"><span class="cat">${esc(catLabel(v.cat))}</span>${v.curated ? `<span class="cat viral">🔥 ${esc(v.views)} · ${esc(v.x)}x</span>` : ''}${v.creator ? `<p class="by">@${esc(v.creator)} · ${v.platform === 'tiktok' ? 'TikTok' : 'Instagram'} · ${esc(v.date)}</p>` : ''}<h3>${esc(v.title || 'Sin título')}</h3>
         ${v.repo ? `<p>🐙 <a href="${esc(repoUrl(v.repo))}" target="_blank" rel="noopener">${esc(repoSlug(v.repo))}</a></p>` : ''}
-        ${v.notes ? `<p>${esc(v.notes)}</p>` : ''}</div>
+        ${v.notes ? `<p>${esc(v.notes)}</p>` : ''}${v.why ? `<p class="why">🎬 ${esc(v.why)}</p>` : ''}</div>
       <div class="actions">
         <button data-act="idea" class="${v.idea ? 'on' : ''}">💡<span>Idea</span></button>
         <button data-act="claude" class="${v.claude ? 'on' : ''}">🧠<span>${v.analysis ? 'Analizado' : 'Claude'}</span></button>
@@ -111,7 +119,7 @@ function slideAction(btn) {
   if (a === 'claude') { v.claude = !v.claude; btn.classList.toggle('on', v.claude); toast(v.claude ? '🧠 En cola para que Claude lo analice' : 'Quitado de la cola'); }
   if (a === 'sound') { state.muted = !state.muted; document.querySelectorAll('[data-act=sound]').forEach(b => b.firstChild.textContent = state.muted ? '🔇' : '🔊'); const vid = slide.querySelector('video'); if (vid) vid.muted = state.muted; const f = slide.querySelector('iframe'); if (f) { f.removeAttribute('src'); activate(slide, true); } }
   if (a === 'open') window.open(v.url, '_blank', 'noopener');
-  if (a === 'del' && confirm('¿Quitar este video?')) { videos = videos.filter(x => x !== v); persist(); renderFeed(); return; }
+  if (a === 'del' && confirm('¿Quitar este video?')) { if (v.curated) { const h = load('as_hidden', []); h.push(v.id); save('as_hidden', h); } videos = videos.filter(x => x !== v); persist(); renderFeed(); return; }
   persist();
 }
 
@@ -187,7 +195,7 @@ function renderAjustes() {
     <label>Modelo<input id="sModel" value="${esc(settings.model)}"></label>
     <div class="row"><button class="btn primary" data-do="saveSettings">Guardar</button></div></div>
     <div class="card"><h4>Respaldo</h4><p class="small">Pasá tu biblioteca entre celular y compu.</p>
-    <div class="row"><button class="btn" data-do="backup">⬇ Exportar JSON</button><button class="btn" data-do="restore">⬆ Importar JSON</button><button class="btn" data-do="clearDemo">Borrar demos</button></div></div>`;
+    ${feedInfo ? `<p class="small">Feed curado por Claude: ${feedInfo.count} videos · actualizado ${esc(feedInfo.updated)}</p>` : ''}<div class="row"><button class="btn" data-do="backup">⬇ Exportar JSON</button><button class="btn" data-do="restore">⬆ Importar JSON</button><button class="btn" data-do="resync">↻ Recargar feed</button></div></div>`;
 }
 
 async function panelAction(btn) {
@@ -205,7 +213,7 @@ async function panelAction(btn) {
   if (d === 'saveSettings') { settings = { perfil: $('#sPerfil').value, apiKey: $('#sKey').value.trim(), model: $('#sModel').value.trim() || 'claude-sonnet-5-5' }; save('as_settings', settings); toast('Guardado'); }
   if (d === 'backup') download('appscroll-backup.json', JSON.stringify({ videos }, null, 2));
   if (d === 'restore') { const i = Object.assign(document.createElement('input'), { type: 'file', accept: '.json' }); i.onchange = async () => { try { videos = JSON.parse(await i.files[0].text()).videos; persist(); renderFeed(); toast('Importado'); } catch { toast('Archivo inválido') } }; i.click(); }
-  if (d === 'clearDemo') { videos = videos.filter(v => !v.id.startsWith('d')); persist(); renderFeed(); toast('Demos borrados'); }
+  if (d === 'resync') { await syncCurated(); renderFeed(); renderAjustes(); toast('Feed actualizado'); }
 }
 function download(name, text) { const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })), download: name }); a.click(); }
 
@@ -220,7 +228,7 @@ async function repoContext(repo) {
     return `Repo ${slug}: ${info?.description || ''} | ⭐ ${info?.stargazers_count ?? '?'} | lenguaje ${info?.language || '?'} | último push ${info?.pushed_at || '?'}\nREADME (recortado):\n${readme.slice(0, 6000)}`;
   } catch { return `Repo ${slug} (no se pudo leer)`; }
 }
-const describe = (v, ctx) => `Título: ${v.title}\nCategoría: ${catLabel(v.cat)}\nVideo: ${v.url}\n${v.repo ? 'Repo: ' + repoUrl(v.repo) + '\n' : ''}Notas: ${v.notes || '-'}${v.ideaNote ? '\nMi idea: ' + v.ideaNote : ''}${ctx ? '\n' + ctx : ''}`;
+const describe = (v, ctx) => `Título: ${v.title}\n${v.creator ? `Creador: @${v.creator} (${v.platform}), ${v.views} vistas, ${v.x}x su media\nPor qué funciona: ${v.why}\n` : ''}Categoría: ${catLabel(v.cat)}\nVideo: ${v.url}\n${v.repo ? 'Repo: ' + repoUrl(v.repo) + '\n' : ''}Notas: ${v.notes || '-'}${v.ideaNote ? '\nMi idea: ' + v.ideaNote : ''}${ctx ? '\n' + ctx : ''}`;
 async function analyze(v) {
   if (!settings.apiKey) { toast('Cargá tu API key en Ajustes o usá Exportar'); return; }
   const ctx = v.repo ? await repoContext(v.repo) : '';
@@ -247,6 +255,7 @@ async function claudePrompt() {
 
 // ---------- init ----------
 renderFeed();
+syncCurated().then(renderFeed);
 if (shared) openAdd({ url: shared });
 document.addEventListener('keydown', e => { if (state.view !== 'feed' || $('#addDialog').open) return; const f = $('#feed'); if (e.key === 'ArrowDown') f.scrollBy(0, innerHeight); if (e.key === 'ArrowUp') f.scrollBy(0, -innerHeight); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

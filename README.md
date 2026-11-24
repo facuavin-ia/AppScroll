@@ -7,7 +7,15 @@ Feed vertical estilo Reels/TikTok **solo con contenido curado por vos**.
 
 ## Feed curado por Claude
 `feed.json` lo genera Claude buscando con vidIQ los videos de TikTok e Instagram que más superaron la media de su creador en las últimas semanas, por categoría. Cada video muestra vistas, cuántas veces superó la media (`x`) y **por qué funcionó** (hook/formato), útil como referencia de edición.
-Para actualizarlo: pedile a Claude *"actualizá el feed.json de AppScroll con virales de las últimas semanas"*. La app lo sincroniza sola al abrir (o Ajustes → Recargar feed); tus 💡 y 🧠 se conservan.
+### Fuentes y actualización
+| Fuente | Qué trae | Clave | Cuándo |
+|---|---|---|---|
+| vidIQ | TikTok + Instagram que superaron la media del creador | conector vidIQ (~35 créditos) | tarea programada mensual (día 9) |
+| YouTube Data API | Shorts más vistos de las últimas 3 semanas | gratis, Google Cloud | `python3 scripts/update_feed.py --only youtube` |
+| Apify (`clockworks/tiktok-scraper`) | TikToks por hashtag | plan gratis de Apify | `python3 scripts/update_feed.py --only tiktok` |
+
+Las claves se cargan como *secretos de red* del entorno de Claude (no van en el repo) o como variables `YOUTUBE_API_KEY` / `APIFY_TOKEN` si lo corrés en tu compu.
+También podés pedirle a Claude *"actualizá el feed.json de AppScroll con virales de las últimas semanas"*. La app lo sincroniza sola al abrir (o Ajustes → Recargar feed); tus 💡 y 🧠 se conservan.
 
 ## Cómo se usa
 - Scroll vertical con snap; el video visible se reproduce solo (y se pausa al salir).

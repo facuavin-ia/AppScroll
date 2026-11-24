@@ -72,7 +72,7 @@ function renderFeed() {
       ? `<video src="${esc(e.src)}" loop muted playsinline preload="metadata"></video><div class="tap"></div>`
       : `<iframe data-src="${esc(e.src)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
     return `<article class="slide" data-id="${v.id}">${media}
-      <div class="meta"><span class="cat">${esc(catLabel(v.cat))}</span>${v.curated ? `<span class="cat viral">🔥 ${esc(v.views)} · ${esc(v.x)}x</span>` : ''}${v.creator ? `<p class="by">@${esc(v.creator)} · ${v.platform === 'tiktok' ? 'TikTok' : 'Instagram'} · ${esc(v.date)}</p>` : ''}<h3>${esc(v.title || 'Sin título')}</h3>
+      <div class="meta"><span class="cat">${esc(catLabel(v.cat))}</span>${v.curated ? `<span class="cat viral">🔥 ${esc(v.views)}${v.x ? ` · ${esc(v.x)}${v.xlabel === '% likes' ? '% likes' : 'x'}` : ''}</span>` : ''}${v.creator ? `<p class="by">@${esc(v.creator)} · ${({ tiktok: 'TikTok', instagram: 'Instagram', youtube: 'YouTube Shorts' })[v.platform] || ''} · ${esc(v.date)}</p>` : ''}<h3>${esc(v.title || 'Sin título')}</h3>
         ${v.repo ? `<p>🐙 <a href="${esc(repoUrl(v.repo))}" target="_blank" rel="noopener">${esc(repoSlug(v.repo))}</a></p>` : ''}
         ${v.notes ? `<p>${esc(v.notes)}</p>` : ''}${v.why ? `<p class="why">🎬 ${esc(v.why)}</p>` : ''}</div>
       <div class="actions">

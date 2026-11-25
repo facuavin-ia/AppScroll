@@ -170,12 +170,12 @@ function renderIdeas() {
 function renderClaude() {
   const list = videos.filter(v => v.claude);
   $('#panel').innerHTML = `<h2>🧠 Cola de análisis</h2><p class="sub">Claude evalúa si cada repo/info es relevante para vos o para tu cerebro de edición.
-    ${settings.apiKey ? '' : '<br>⚠︎ Sin API key: usá “Exportar para Claude” y pegalo en Claude / Claude Code, o cargá tu key en Ajustes.'}</p>` +
+    ${settings.apiKey ? '' : '<br>“Analizar” copia el pedido y abre Claude con todo listo para enviar.'}</p>` +
     (list.length ? list.map(v => item(v, `${v.analysis ? verdictHtml(v.analysis) : ''}
-      <div class="row"><button class="btn primary" data-do="analyze">${v.analysis ? '↻ Re-analizar' : '▶ Analizar'}</button>
+      <div class="row"><button class="btn primary" data-do="analyze">${!settings.apiKey ? '🧠 Analizar en Claude' : v.analysis ? '↻ Re-analizar' : '▶ Analizar'}</button>
       ${v.analysis?.cerebro ? `<button class="btn" data-do="brain">${v.brain ? '✓ En cerebro' : '＋ Cerebro de edición'}</button>` : ''}
       <button class="btn" data-do="unClaude">Quitar</button></div>`)).join('')
-      + `<div class="row"><button class="btn primary" data-do="analyzeAll">Analizar todo</button><button class="btn" data-do="exportClaude">⬇ Exportar para Claude</button><button class="btn" data-do="copyClaude">📋 Copiar prompt</button><button class="btn" data-do="exportBrain">⬇ Cerebro (.md)</button></div>`
+      + `<div class="row"><button class="btn primary" data-do="analyzeAll">${settings.apiKey ? 'Analizar todo' : '🧠 Analizar todo en Claude'}</button><button class="btn" data-do="exportClaude">⬇ Exportar para Claude</button><button class="btn" data-do="copyClaude">📋 Copiar prompt</button><button class="btn" data-do="exportBrain">⬇ Cerebro (.md)</button></div>`
       : `<p class="empty">Nada en cola. Tocá 🧠 en un video para que Claude lo analice.</p>`);
 }
 function verdictHtml(a) {
@@ -204,6 +204,8 @@ async function panelAction(btn) {
   if (d === 'toClaude') { v.claude = true; persist(); renderIdeas(); toast('🧠 En cola'); }
   if (d === 'unClaude') { v.claude = false; persist(); renderClaude(); }
   if (d === 'brain') { v.brain = !v.brain; persist(); renderClaude(); }
+  if (d === 'analyze' && !settings.apiKey) { sendToClaude([v]); return; }
+  if (d === 'analyzeAll' && !settings.apiKey) { sendToClaude(videos.filter(x => x.claude)); return; }
   if (d === 'analyze') { btn.textContent = 'Analizando…'; btn.disabled = true; await analyze(v); renderClaude(); }
   if (d === 'analyzeAll') { btn.textContent = 'Analizando…'; for (const x of videos.filter(x => x.claude && !x.analysis)) await analyze(x); renderClaude(); }
   if (d === 'exportClaude') download('para-claude.md', await claudePrompt());
@@ -229,8 +231,20 @@ async function repoContext(repo) {
   } catch { return `Repo ${slug} (no se pudo leer)`; }
 }
 const describe = (v, ctx) => `Título: ${v.title}\n${v.creator ? `Creador: @${v.creator} (${v.platform}), ${v.views} vistas, ${v.x}x su media\nPor qué funciona: ${v.why}\n` : ''}Categoría: ${catLabel(v.cat)}\nVideo: ${v.url}\n${v.repo ? 'Repo: ' + repoUrl(v.repo) + '\n' : ''}Notas: ${v.notes || '-'}${v.ideaNote ? '\nMi idea: ' + v.ideaNote : ''}${ctx ? '\n' + ctx : ''}`;
+// Sin API key: arma el pedido, lo copia y abre Claude con el texto ya cargado.
+// Todo sincrónico para que el navegador del celular permita copiar.
+function quickPrompt(list) {
+  return `Mi perfil:\n${settings.perfil}\n\nAnalizá ${list.length > 1 ? 'estos videos que guardé' : 'este video que guardé'} (si hay repo, leé su README):\n\n${list.map((v, i) => `${i + 1}. ${describe(v, '')}`).join('\n\n')}\n\nPara cada uno: relevancia (alta/media/baja, 0-10), qué es, por qué me sirve o no, cómo usarlo en mi flujo (DaVinci/AE/CapCut/automatización), si va a mi cerebro de edición y una idea de reel para mi marca.${list.length > 1 ? ' Al final, un top 3 priorizado.' : ''}`;
+}
+function sendToClaude(list) {
+  const text = quickPrompt(list);
+  const done = () => toast('📋 Copiado. Se abre Claude: si no aparece el texto, pegalo');
+  try { navigator.clipboard.writeText(text).then(done, done); } catch { done(); }
+  const a = Object.assign(document.createElement('a'), { href: 'https://claude.ai/new?q=' + encodeURIComponent(text), target: '_blank', rel: 'noopener' });
+  document.body.appendChild(a); a.click(); a.remove();
+}
 async function analyze(v) {
-  if (!settings.apiKey) { toast('Cargá tu API key en Ajustes o usá Exportar'); return; }
+  if (!settings.apiKey) { sendToClaude([v]); return; }
   const ctx = v.repo ? await repoContext(v.repo) : '';
   const prompt = `Mi perfil:\n${settings.perfil}\n\nAnalizá este contenido que guardé:\n${describe(v, ctx)}\n\nRespondé SOLO con JSON: {"relevancia":"alta|media|baja","puntaje":0-10,"resumen":"qué es en 1-2 frases","por_que":"por qué me sirve o no","como_usarlo":"pasos concretos para mi flujo (Resolve/AE/CapCut/automatización)","cerebro":true|false (si vale la pena guardarlo en mi cerebro de edición),"idea_contenido":"una idea de reel/tutorial para mi marca a partir de esto"}`;
   try {

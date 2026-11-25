@@ -20,7 +20,8 @@ También podés pedirle a Claude *"actualizá el feed.json de AppScroll con vira
 ## Cómo se usa
 - Scroll vertical con snap; el video visible se reproduce solo (y se pausa al salir).
 - ＋ agrega links de **YouTube Shorts, TikTok, Instagram Reels o .mp4**. Si instalás la app (PWA) podés usar *Compartir → AppScroll* desde otras apps.
-- 💡 marca el video como **idea a tener en cuenta** (pestaña Ideas, con nota y exportación a `.md`).
+- **Scrolleás = descartás:** lo que pasás sin elegir no vuelve a aparecer (Ajustes → Volver a ver descartados).
+- **🧠 o doble toque** elige el video para que Claude lo analice (pestaña *Para analizar*).
 - 🧠 lo manda a la **cola de Claude**. Claude lee el repo de GitHub (descripción, estrellas, README) y te dice relevancia 0‑10, por qué, cómo usarlo en DaVinci/AE/CapCut, si va a tu **cerebro de edición** y una idea de contenido.
   - Con API key de Anthropic (Ajustes): analiza dentro de la app.
   - Sin key: **Exportar para Claude** / **Copiar prompt** y lo pegás en Claude o Claude Code.

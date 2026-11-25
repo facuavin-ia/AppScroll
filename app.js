@@ -30,6 +30,8 @@ async function syncCurated() {
 let settings = load('as_settings', { apiKey: '', model: 'claude-sonnet-5-5', perfil: DEFAULT_PERFIL });
 let state = { feed: 'rubro', sub: 'all', view: 'feed', muted: true };
 const persist = () => save('as_videos', videos);
+let seen = new Set(load('as_seen', []));
+const saveSeen = () => save('as_seen', [...seen]);
 const feedOf = cat => Object.keys(CATS).find(f => cat in CATS[f].subs);
 const catLabel = cat => CATS[feedOf(cat)]?.subs[cat] || cat;
 const $ = s => document.querySelector(s);
@@ -52,8 +54,7 @@ const repoSlug = r => (r || '').replace(/^https?:\/\/github\.com\//, '').replace
 
 // ---------- feed ----------
 function visible() {
-  const hidden = new Set(load('as_hidden', []));
-  return videos.filter(v => !hidden.has(v.id) && feedOf(v.cat) === state.feed && (state.sub === 'all' || v.cat === state.sub)).sort((a, b) => b.added - a.added);
+  return videos.filter(v => (!seen.has(v.id) || v.claude) && feedOf(v.cat) === state.feed && (state.sub === 'all' || v.cat === state.sub)).sort((a, b) => b.added - a.added);
 }
 function renderChips() {
   const subs = CATS[state.feed].subs;
@@ -65,7 +66,7 @@ function renderFeed() {
   renderChips();
   const list = visible();
   const feed = $('#feed');
-  if (!list.length) { feed.innerHTML = `<div class="slide"><p class="empty">No hay videos acá todavía.<br>Tocá ＋ para agregar uno.</p></div>`; return; }
+  if (!list.length) { feed.innerHTML = `<div class="slide"><p class="empty">Ya viste todo lo de esta sección. 🙌<br>Llegan videos nuevos con la próxima actualización,<br>o tocá ＋ para agregar uno.</p></div>`; return; }
   feed.innerHTML = list.map(v => {
     const e = parse(v.url);
     const media = e.kind === 'video'
@@ -76,16 +77,19 @@ function renderFeed() {
         ${v.repo ? `<p>🐙 <a href="${esc(repoUrl(v.repo))}" target="_blank" rel="noopener">${esc(repoSlug(v.repo))}</a></p>` : ''}
         ${v.notes ? `<p>${esc(v.notes)}</p>` : ''}${v.why ? `<p class="why">🎬 ${esc(v.why)}</p>` : ''}</div>
       <div class="actions">
-        <button data-act="idea" class="${v.idea ? 'on' : ''}">💡<span>Idea</span></button>
-        <button data-act="claude" class="${v.claude ? 'on' : ''}">🧠<span>${v.analysis ? 'Analizado' : 'Claude'}</span></button>
+        <button data-act="claude" class="big ${v.claude ? 'on' : ''}">🧠<span>${v.claude ? 'Elegido' : 'Analizar'}</span></button>
         <button data-act="sound">${state.muted ? '🔇' : '🔊'}<span>Sonido</span></button>
         <button data-act="open">↗<span>Abrir</span></button>
-        <button data-act="del">🗑<span>Quitar</span></button>
       </div></article>`;
   }).join('');
   feed.scrollTop = 0;
   io?.disconnect();
-  io = new IntersectionObserver(es => es.forEach(en => activate(en.target, en.isIntersecting)), { root: feed, threshold: 0.6 });
+  io = new IntersectionObserver(es => es.forEach(en => {
+    activate(en.target, en.isIntersecting);
+    const id = en.target.dataset.id;
+    if (en.isIntersecting) en.target._shown = true;
+    else if (en.target._shown && !videos.find(v => v.id === id)?.claude) { seen.add(id); saveSeen(); }
+  }), { root: feed, threshold: 0.6 });
   feed.querySelectorAll('.slide[data-id]').forEach(s => io.observe(s));
 }
 function activate(slide, on) {
@@ -115,13 +119,26 @@ document.addEventListener('click', e => {
 function slideAction(btn) {
   const slide = btn.closest('.slide'), v = videos.find(x => x.id === slide.dataset.id); if (!v) return;
   const a = btn.dataset.act;
-  if (a === 'idea') { v.idea = !v.idea; btn.classList.toggle('on', v.idea); toast(v.idea ? '💡 Guardado en Ideas' : 'Quitado de Ideas'); }
-  if (a === 'claude') { v.claude = !v.claude; btn.classList.toggle('on', v.claude); toast(v.claude ? '🧠 En cola para que Claude lo analice' : 'Quitado de la cola'); }
+  if (a === 'claude') toggleClaude(v, slide);
   if (a === 'sound') { state.muted = !state.muted; document.querySelectorAll('[data-act=sound]').forEach(b => b.firstChild.textContent = state.muted ? '🔇' : '🔊'); const vid = slide.querySelector('video'); if (vid) vid.muted = state.muted; const f = slide.querySelector('iframe'); if (f) { f.removeAttribute('src'); activate(slide, true); } }
   if (a === 'open') window.open(v.url, '_blank', 'noopener');
-  if (a === 'del' && confirm('¿Quitar este video?')) { if (v.curated) { const h = load('as_hidden', []); h.push(v.id); save('as_hidden', h); } videos = videos.filter(x => x !== v); persist(); renderFeed(); return; }
   persist();
 }
+
+function toggleClaude(v, slide, forceOn) {
+  v.claude = forceOn ? true : !v.claude; if (v.claude) seen.delete(v.id); persist(); saveSeen();
+  const b = slide.querySelector('[data-act=claude]'); b.classList.toggle('on', v.claude); b.lastChild.textContent = v.claude ? 'Elegido' : 'Analizar';
+  if (v.claude) { slide.classList.remove('pop'); void slide.offsetWidth; slide.classList.add('pop'); }
+  toast(v.claude ? '🧠 Elegido para que Claude lo analice' : 'Quitado de la cola'); updateBadge();
+}
+function updateBadge() { const n = videos.filter(v => v.claude).length, b = $('#qCount'); if (b) { b.textContent = n; b.hidden = !n; } }
+// doble toque = elegir (como el corazón de TikTok)
+let lastTap = 0;
+$('#feed').addEventListener('pointerup', e => {
+  const slide = e.target.closest('.slide[data-id]'); if (!slide || e.target.closest('button,a')) return;
+  const now = Date.now();
+  if (now - lastTap < 300) { const v = videos.find(x => x.id === slide.dataset.id); if (v) toggleClaude(v, slide, true); lastTap = 0; } else lastTap = now;
+});
 
 // ---------- agregar ----------
 function openAdd(prefill = {}) {
@@ -152,31 +169,21 @@ function setView(view) {
   if (view === 'feed') { p.classList.add('hidden'); document.querySelectorAll('.slide').forEach(s => { const r = s.getBoundingClientRect(); if (Math.abs(r.top) < 50) activate(s, true) }); return; }
   document.querySelectorAll('.slide').forEach(s => activate(s, false));
   p.classList.remove('hidden');
-  ({ ideas: renderIdeas, claude: renderClaude, ajustes: renderAjustes })[view]();
+  ({ claude: renderClaude, ajustes: renderAjustes })[view]();
 }
 const item = (v, extra = '') => `<div class="card" data-id="${v.id}"><h4>${esc(v.title || 'Sin título')}</h4>
   <div class="small">${esc(catLabel(v.cat))} · <a href="${esc(v.url)}" target="_blank" rel="noopener" style="color:var(--acc2)">ver video</a>${v.repo ? ` · 🐙 <a href="${esc(repoUrl(v.repo))}" target="_blank" rel="noopener" style="color:var(--acc2)">${esc(repoSlug(v.repo))}</a>` : ''}</div>${extra}</div>`;
 
-function renderIdeas() {
-  const list = videos.filter(v => v.idea);
-  $('#panel').innerHTML = `<h2>💡 Ideas a tener en cuenta</h2><p class="sub">Videos que marcaste. Anotá cómo usarlos en tu contenido.</p>` +
-    (list.length ? list.map(v => item(v, `<textarea data-note="${v.id}" rows="2" placeholder="¿Cómo lo uso? (ej: tutorial, reel, plantilla para cliente)">${esc(v.ideaNote || '')}</textarea>
-      <div class="row"><button class="btn" data-do="toClaude">${v.claude ? '✓ En cola Claude' : '🧠 Mandar a Claude'}</button><button class="btn" data-do="unIdea">Quitar</button></div>`)).join('')
-      + `<div class="row"><button class="btn primary" data-do="exportIdeas">⬇ Exportar ideas (.md)</button></div>`
-      : `<p class="empty">Todavía no marcaste ideas. Tocá 💡 en un video.</p>`);
-  $('#panel').querySelectorAll('[data-note]').forEach(t => t.oninput = () => { videos.find(v => v.id === t.dataset.note).ideaNote = t.value; persist(); });
-}
-
 function renderClaude() {
   const list = videos.filter(v => v.claude);
-  $('#panel').innerHTML = `<h2>🧠 Cola de análisis</h2><p class="sub">Claude evalúa si cada repo/info es relevante para vos o para tu cerebro de edición.
+  $('#panel').innerHTML = `<h2>🧠 Para analizar</h2><p class="sub">Claude evalúa si cada repo/info es relevante para vos o para tu cerebro de edición.
     ${settings.apiKey ? '' : '<br>“Analizar” copia el pedido y abre Claude con todo listo para enviar.'}</p>` +
     (list.length ? list.map(v => item(v, `${v.analysis ? verdictHtml(v.analysis) : ''}
       <div class="row"><button class="btn primary" data-do="analyze">${!settings.apiKey ? '🧠 Analizar en Claude' : v.analysis ? '↻ Re-analizar' : '▶ Analizar'}</button>
       ${v.analysis?.cerebro ? `<button class="btn" data-do="brain">${v.brain ? '✓ En cerebro' : '＋ Cerebro de edición'}</button>` : ''}
       <button class="btn" data-do="unClaude">Quitar</button></div>`)).join('')
       + `<div class="row"><button class="btn primary" data-do="analyzeAll">${settings.apiKey ? 'Analizar todo' : '🧠 Analizar todo en Claude'}</button><button class="btn" data-do="exportClaude">⬇ Exportar para Claude</button><button class="btn" data-do="copyClaude">📋 Copiar prompt</button><button class="btn" data-do="exportBrain">⬇ Cerebro (.md)</button></div>`
-      : `<p class="empty">Nada en cola. Tocá 🧠 en un video para que Claude lo analice.</p>`);
+      : `<p class="empty">Todavía no elegiste nada.<br>En el feed tocá 🧠 o tocá dos veces el video.</p>`);
 }
 function verdictHtml(a) {
   if (a.error) return `<div class="verdict no">Error: ${esc(a.error)}</div>`;
@@ -195,14 +202,12 @@ function renderAjustes() {
     <label>Modelo<input id="sModel" value="${esc(settings.model)}"></label>
     <div class="row"><button class="btn primary" data-do="saveSettings">Guardar</button></div></div>
     <div class="card"><h4>Respaldo</h4><p class="small">Pasá tu biblioteca entre celular y compu.</p>
-    ${feedInfo ? `<p class="small">Feed curado por Claude: ${feedInfo.count} videos · actualizado ${esc(feedInfo.updated)}</p>` : ''}<div class="row"><button class="btn" data-do="backup">⬇ Exportar JSON</button><button class="btn" data-do="restore">⬆ Importar JSON</button><button class="btn" data-do="resync">↻ Recargar feed</button></div></div>`;
+    ${feedInfo ? `<p class="small">Feed curado por Claude: ${feedInfo.count} videos · actualizado ${esc(feedInfo.updated)}</p>` : ''}<div class="row"><button class="btn" data-do="backup">⬇ Exportar JSON</button><button class="btn" data-do="restore">⬆ Importar JSON</button><button class="btn" data-do="resync">↻ Recargar feed</button><button class="btn" data-do="unseen">↺ Volver a ver descartados (${seen.size})</button></div></div>`;
 }
 
 async function panelAction(btn) {
   const id = btn.closest('[data-id]')?.dataset.id, v = videos.find(x => x.id === id), d = btn.dataset.do;
-  if (d === 'unIdea') { v.idea = false; persist(); renderIdeas(); }
-  if (d === 'toClaude') { v.claude = true; persist(); renderIdeas(); toast('🧠 En cola'); }
-  if (d === 'unClaude') { v.claude = false; persist(); renderClaude(); }
+  if (d === 'unClaude') { v.claude = false; seen.add(v.id); saveSeen(); persist(); renderClaude(); updateBadge(); }
   if (d === 'brain') { v.brain = !v.brain; persist(); renderClaude(); }
   if (d === 'analyze' && !settings.apiKey) { sendToClaude([v]); return; }
   if (d === 'analyzeAll' && !settings.apiKey) { sendToClaude(videos.filter(x => x.claude)); return; }
@@ -210,11 +215,11 @@ async function panelAction(btn) {
   if (d === 'analyzeAll') { btn.textContent = 'Analizando…'; for (const x of videos.filter(x => x.claude && !x.analysis)) await analyze(x); renderClaude(); }
   if (d === 'exportClaude') download('para-claude.md', await claudePrompt());
   if (d === 'copyClaude') { await navigator.clipboard.writeText(await claudePrompt()); toast('Prompt copiado'); }
-  if (d === 'exportIdeas') download('ideas.md', '# Ideas a tener en cuenta\n\n' + videos.filter(v => v.idea).map(v => `## ${v.title}\n- Categoría: ${catLabel(v.cat)}\n- Video: ${v.url}${v.repo ? `\n- Repo: ${repoUrl(v.repo)}` : ''}\n- Nota: ${v.ideaNote || v.notes || '-'}\n`).join('\n'));
   if (d === 'exportBrain') download('cerebro-edicion.md', '# Cerebro de edición\n\n' + videos.filter(v => v.brain || v.analysis?.cerebro).map(v => `## ${v.title}\n${repoUrl(v.repo) || v.url}\n\n${v.analysis?.resumen || ''}\n\n**Cómo usarlo:** ${v.analysis?.como_usarlo || ''}\n`).join('\n'));
   if (d === 'saveSettings') { settings = { perfil: $('#sPerfil').value, apiKey: $('#sKey').value.trim(), model: $('#sModel').value.trim() || 'claude-sonnet-5-5' }; save('as_settings', settings); toast('Guardado'); }
   if (d === 'backup') download('appscroll-backup.json', JSON.stringify({ videos }, null, 2));
   if (d === 'restore') { const i = Object.assign(document.createElement('input'), { type: 'file', accept: '.json' }); i.onchange = async () => { try { videos = JSON.parse(await i.files[0].text()).videos; persist(); renderFeed(); toast('Importado'); } catch { toast('Archivo inválido') } }; i.click(); }
+  if (d === 'unseen') { seen = new Set(); saveSeen(); renderFeed(); renderAjustes(); toast('Descartados restaurados'); }
   if (d === 'resync') { await syncCurated(); renderFeed(); renderAjustes(); toast('Feed actualizado'); }
 }
 function download(name, text) { const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })), download: name }); a.click(); }
@@ -230,7 +235,7 @@ async function repoContext(repo) {
     return `Repo ${slug}: ${info?.description || ''} | ⭐ ${info?.stargazers_count ?? '?'} | lenguaje ${info?.language || '?'} | último push ${info?.pushed_at || '?'}\nREADME (recortado):\n${readme.slice(0, 6000)}`;
   } catch { return `Repo ${slug} (no se pudo leer)`; }
 }
-const describe = (v, ctx) => `Título: ${v.title}\n${v.creator ? `Creador: @${v.creator} (${v.platform}), ${v.views} vistas, ${v.x}x su media\nPor qué funciona: ${v.why}\n` : ''}Categoría: ${catLabel(v.cat)}\nVideo: ${v.url}\n${v.repo ? 'Repo: ' + repoUrl(v.repo) + '\n' : ''}Notas: ${v.notes || '-'}${v.ideaNote ? '\nMi idea: ' + v.ideaNote : ''}${ctx ? '\n' + ctx : ''}`;
+const describe = (v, ctx) => `Título: ${v.title}\n${v.creator ? `Creador: @${v.creator} (${v.platform}), ${v.views} vistas, ${v.x}x su media\nPor qué funciona: ${v.why}\n` : ''}Categoría: ${catLabel(v.cat)}\nVideo: ${v.url}\n${v.repo ? 'Repo: ' + repoUrl(v.repo) + '\n' : ''}Notas: ${v.notes || '-'}${ctx ? '\n' + ctx : ''}`;
 // Sin API key: arma el pedido, lo copia y abre Claude con el texto ya cargado.
 // Todo sincrónico para que el navegador del celular permita copiar.
 function quickPrompt(list) {
@@ -268,7 +273,7 @@ async function claudePrompt() {
 }
 
 // ---------- init ----------
-renderFeed();
+renderFeed(); updateBadge();
 syncCurated().then(renderFeed);
 if (shared) openAdd({ url: shared });
 document.addEventListener('keydown', e => { if (state.view !== 'feed' || $('#addDialog').open) return; const f = $('#feed'); if (e.key === 'ArrowDown') f.scrollBy(0, innerHeight); if (e.key === 'ArrowUp') f.scrollBy(0, -innerHeight); });

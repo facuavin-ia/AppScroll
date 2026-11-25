@@ -55,3 +55,17 @@ dialog menu button{padding:8px 14px;border-radius:9px;background:#ffffff18}
 .meta .viral{background:#ffffff26;margin-left:6px}
 .meta .by{font-size:12px;color:#ccc;margin:0 0 2px}
 .meta .why{font-size:12px;color:var(--acc2);opacity:.9}
+/* v4: elegir para Claude */
+.actions{gap:20px}
+.actions button{font-size:30px;min-width:56px;min-height:56px;justify-content:center}
+.actions .big{width:64px;height:64px;border-radius:50%;background:#ffffff26;backdrop-filter:blur(6px);font-size:32px}
+.actions .big.on{background:var(--acc)}
+.actions .big span{position:absolute;top:66px;font-size:11px}
+.actions .big{position:relative;margin-bottom:14px}
+.bottom button{min-height:48px}
+.bottom .q{position:relative}
+.bottom .q b{position:absolute;top:-2px;right:8px;background:var(--acc);color:#fff;font-size:11px;min-width:18px;height:18px;border-radius:9px;display:grid;place-items:center;padding:0 4px}
+.slide.pop::before{content:"🧠";position:absolute;z-index:4;left:50%;top:45%;font-size:110px;transform:translate(-50%,-50%) scale(0);animation:pop .7s ease-out forwards;pointer-events:none}
+@keyframes pop{40%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+@media (prefers-reduced-motion:reduce){.slide.pop::before{animation:none;opacity:0}}
+.chips button{padding:7px 13px;font-size:14px}
